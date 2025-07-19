@@ -23,6 +23,7 @@
 #include <string.h>
 #include <math.h>
 #include "comm_can.h"
+#include "multiturn_pack.h"
 #include "ch.h"
 #include "hal.h"
 #include "stm32f4xx_conf.h"
@@ -507,6 +508,24 @@ void comm_can_set_pos(uint8_t controller_id, float pos) {
 	buffer_append_int32(buffer, (int32_t)(pos * 1000000.0), &send_index);
 	comm_can_transmit_eid_replace(controller_id |
 			((uint32_t)CAN_PACKET_SET_POS << 8), buffer, send_index, true, 0);
+}
+
+
+void comm_can_set_multiturn_pos_feedforward(uint8_t controller_id, float pos, float feedforward) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+    
+    // Append big-endian uint32
+    buffer_append_uint32(buffer, pack_multiturn_pos32(pos), &send_index);
+	buffer_append_int32(buffer, (int32_t)(feedforward * 1000000.0), &send_index);
+
+    // Transmit with replace flag
+    comm_can_transmit_eid_replace(
+        controller_id | ((uint32_t)CAN_PACKET_SET_MULTITURN_POS_FEEDFORWARD << 8),
+        buffer, send_index,
+        true,
+        0
+    );
 }
 
 /**
@@ -1197,6 +1216,7 @@ void comm_can_send_status4(uint8_t id, bool replace) {
 			buffer, send_index, replace, 0);
 }
 
+
 void comm_can_send_status5(uint8_t id, bool replace) {
 	int32_t send_index = 0;
 	uint8_t buffer[8];
@@ -1217,6 +1237,49 @@ void comm_can_send_status6(uint8_t id, bool replace) {
 	comm_can_transmit_eid_replace(id | ((uint32_t)CAN_PACKET_STATUS_6 << 8),
 			buffer, send_index, replace, 0);
 }
+
+
+static inline int16_t clamp_to_i16(float x, float scale) {
+    float val = x * scale;
+    utils_truncate_number_abs(&val, 32767.0f);
+    return (int16_t)val;
+}
+
+// max sample id is 8191 after need cycle
+void comm_can_send_vel_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+	buffer_append_int16(buffer, clamp_to_i16(data->v1 , 100.0f), &send_index);                         
+	buffer_append_int16(buffer, clamp_to_i16(data->v2 , 100.0f), &send_index);      
+	buffer_append_int16(buffer, clamp_to_i16(data->v3 , 100.0f), &send_index);      
+	buffer_append_int16(buffer, clamp_to_i16(data->v4 , 100.0f), &send_index);     
+
+	comm_can_transmit_eid_replace(id | ((uint32_t)CAN_PACKET_STATUS_VEL << 8)| (sample_id << 16),
+			buffer, send_index, replace, 0);
+}
+
+
+void comm_can_send_pos_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+	buffer_append_uint32(buffer, pack_multiturn_pos32(data->curent_pid_pos), &send_index);                    
+	buffer_append_uint32(buffer, pack_multiturn_pos32(data->desierd_pid_pos), &send_index);          
+	comm_can_transmit_eid_replace(id | ((uint32_t)CAN_PACKET_STATUS_POS << 8)| (sample_id << 16),
+			buffer, send_index, replace, 0);
+}
+
+
+void comm_can_send_cnt_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id, uint16_t dt_10us) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+	buffer_append_int16(buffer, clamp_to_i16(data->d_applied,32767.0f), &send_index);                         
+	buffer_append_int16(buffer, clamp_to_i16(data->a_applied,100.0f), &send_index);      
+	buffer_append_int16(buffer, clamp_to_i16(data->iq_measured,100.0f), &send_index);      
+	buffer_append_uint16(buffer, dt_10us, &send_index);    
+	comm_can_transmit_eid_replace(id | ((uint32_t)CAN_PACKET_STATUS_CNT << 8)| (sample_id << 16),
+			buffer, send_index, replace, 0);
+}
+
 
 #if CAN_ENABLE
 static THD_FUNCTION(cancom_read_thread, arg) {
@@ -1452,11 +1515,30 @@ static THD_FUNCTION(cancom_status_thread, arg) {
 	(void)arg;
 	chRegSetThreadName("CAN status 1");
 
+	control_log_t control_log;
+	control_log_t *control_log_p;
+	control_log_p = &control_log;
+	uint16_t sample_id= 0;
 	for(;;) {
 		const app_configuration *conf = app_get_configuration();
 
 		if (conf->can_mode == CAN_MODE_VESC) {
 			send_can_status(conf->can_status_msgs_r1, conf->controller_id);
+			
+			uint32_t last = control_log.timestamp_14MHz;
+			mc_interface_get_pid_pos_high_res_control_data(control_log_p);
+			uint32_t  dt  = control_log.timestamp_14MHz - last;
+			if (dt!=0) 
+			{
+				if (dt > 9170000) {
+					sample_id++;  // mark that  DT send is not good (by making a ID gap that will recognized by reciving side )
+					dt = 9170000;
+				} 
+				comm_can_send_vel_status(conf->controller_id, false, control_log_p,  sample_id);
+				comm_can_send_pos_status(conf->controller_id, false, control_log_p,  sample_id);
+				comm_can_send_cnt_status(conf->controller_id, false, control_log_p,  sample_id, (uint16_t)(dt / 140));
+				sample_id = (sample_id + 1) & 0x1FFF;
+			}
 		}
 
 		while (conf->can_status_rate_1 == 0) {
@@ -1507,7 +1589,6 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 	uint8_t crc_low;
 	uint8_t crc_high;
 	uint8_t commands_send;
-
 	uint8_t id = eid & 0xFF;
 	CAN_PACKET_ID cmd = eid >> 8;
 
@@ -1560,7 +1641,20 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 		case CAN_PACKET_SET_POS:
 			ind = 0;
-			mc_interface_set_pid_pos(buffer_get_float32(data8, 1e6, &ind));
+			mc_interface_set_pid_pos(buffer_get_float32(data8, 1e6, &ind),0.0);
+			timeout_reset();
+			break;
+
+		case CAN_PACKET_SET_POS_STREAM_PARAMS: 
+			ind = 0;
+			mc_interface_set_pid_stream_frequency (buffer_get_uint16(data8, &ind), buffer_get_uint16(data8,&ind));
+			timeout_reset();
+		 	break;
+		
+
+		case CAN_PACKET_SET_MULTITURN_POS_FEEDFORWARD:
+			ind = 0;
+			mc_interface_set_pid_stream_pos(unpack_multiturn_pos32( buffer_get_uint32(data8, &ind)),buffer_get_float32(data8, 1e6, &ind));
 			timeout_reset();
 			break;
 

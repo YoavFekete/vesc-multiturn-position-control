@@ -24,6 +24,7 @@
 #include "ch.h"
 #include "hal.h"
 #include "mc_interface.h"
+#include "multiturn_pack.h"
 #include "stm32f4xx_conf.h"
 #include "pwm_servo.h"
 #include "buffer.h"
@@ -443,7 +444,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			send_buffer[ind++] = mc_interface_get_fault();
 		}
 		if (mask & ((uint32_t)1 << 16)) {
-			buffer_append_float32(send_buffer, mc_interface_get_pid_pos_now(), 1e6, &ind);
+			buffer_append_uint32(send_buffer, pack_multiturn_pos32(mc_interface_get_pid_pos_now()), &ind);
 		}
 		if (mask & ((uint32_t)1 << 17)) {
 			uint8_t current_controller_id = app_get_configuration()->controller_id;
@@ -508,9 +509,15 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 	case COMM_SET_POS: {
 		int32_t ind = 0;
-		mc_interface_set_pid_pos((float)buffer_get_int32(data, &ind) / 1000000.0);
+		mc_interface_set_pid_pos((float)buffer_get_int32(data, &ind) / 1000000.0,0.0);
 		timeout_reset();
 	} break;
+
+	case COMM_SET_MULTITURN_POS_FEEDFORWARD: {
+        int32_t ind = 0;
+		mc_interface_set_pid_pos(unpack_multiturn_pos32( buffer_get_uint32(data, &ind)),(float)buffer_get_int32(data, &ind) / 1000000.0);
+        timeout_reset();
+    } break;
 
 	case COMM_SET_HANDBRAKE: {
 		int32_t ind = 0;
@@ -840,7 +847,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float32(send_buffer, mc_interface_get_distance_abs(), 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 15)) {
-			buffer_append_float32(send_buffer, mc_interface_get_pid_pos_now(), 1e6, &ind);
+			buffer_append_uint32(send_buffer, pack_multiturn_pos32(mc_interface_get_pid_pos_now()), &ind);
 		}
 		if (mask & ((uint32_t)1 << 16)) {
 			send_buffer[ind++] = mc_interface_get_fault();
@@ -1680,7 +1687,7 @@ void commands_send_rotor_pos(float rotor_pos) {
 	uint8_t buffer[5];
 	int32_t index = 0;
 	buffer[index++] = COMM_ROTOR_POSITION;
-	buffer_append_int32(buffer, (int32_t)(rotor_pos * 100000.0), &index);
+	buffer_append_uint32(buffer, pack_multiturn_pos32(rotor_pos), &index);
 	commands_send_packet(buffer, index);
 }
 

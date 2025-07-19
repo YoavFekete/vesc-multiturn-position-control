@@ -47,6 +47,7 @@ static volatile bool m_dccal_done = false;
 static volatile float m_last_adc_isr_duration;
 static volatile bool m_init_done = false;
 static volatile motor_all_state_t m_motor_1;
+
 #ifdef HW_HAS_DUAL_MOTORS
 static volatile motor_all_state_t m_motor_2;
 #endif
@@ -769,16 +770,18 @@ void mcpwm_foc_set_pid_speed(float rpm) {
 }
 
 /**
- * Use PID position control. Note that this only works when encoder support
+ * Use Feedforward PID position control. Note that this only works when encoder support
  * is enabled.
  *
  * @param pos
  * The desired position of the motor in degrees.
-
+ * @param feedforwars
+ * Externaly computed feedforward term
  */
-void mcpwm_foc_set_pid_pos(float pos) {
+void mcpwm_foc_set_pid_pos(float pos,float feedforward) {
 	get_motor_now()->m_control_mode = CONTROL_MODE_POS;
 	get_motor_now()->m_pos_pid_set = pos;
+	get_motor_now()->m_feedforward_set = feedforward;
 
 	if (get_motor_now()->m_state != MC_STATE_RUNNING) {
 		get_motor_now()->m_motor_released = false;
@@ -1033,8 +1036,16 @@ float mcpwm_foc_get_pid_pos_set(void) {
 	return get_motor_now()->m_pos_pid_set;
 }
 
+float mcpwm_foc_get_feedforward_set(void) {
+	return get_motor_now()->m_feedforward_set;
+}
+
 float mcpwm_foc_get_pid_pos_now(void) {
 	return get_motor_now()->m_pos_pid_now;
+}
+
+void mcpwm_foc_get_pid_pos_high_res_control_data(control_log_t *data){
+	foc_get_pid_pos_high_res_control_data(data);
 }
 
 /**
@@ -3629,29 +3640,16 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		if (conf_now->m_sensor_port_mode == SENSOR_PORT_MODE_TS5700N8501_MULTITURN) {
 			angle_now = encoder_read_deg_multiturn();
 		} else {
-			angle_now = enc_ang;
+			angle_now = position_update_multiturn(enc_ang);
 		}
 	} else {
 		angle_now = RAD2DEG_f(motor_now->m_motor_state.phase);
 	}
 
-	utils_norm_angle(&angle_now);
-
 	if (conf_now->p_pid_ang_div > 0.98 && conf_now->p_pid_ang_div < 1.02) {
 		motor_now->m_pos_pid_now = angle_now;
 	} else {
-		if (angle_now < 90.0 && motor_now->m_pid_div_angle_last > 270.0) {
-			motor_now->m_pid_div_angle_accumulator += 360.0 / conf_now->p_pid_ang_div;
-			utils_norm_angle((float*)&motor_now->m_pid_div_angle_accumulator);
-		} else if (angle_now > 270.0 && motor_now->m_pid_div_angle_last < 90.0) {
-			motor_now->m_pid_div_angle_accumulator -= 360.0 / conf_now->p_pid_ang_div;
-			utils_norm_angle((float*)&motor_now->m_pid_div_angle_accumulator);
-		}
-
-		motor_now->m_pid_div_angle_last = angle_now;
-
-		motor_now->m_pos_pid_now = motor_now->m_pid_div_angle_accumulator + angle_now / conf_now->p_pid_ang_div;
-		utils_norm_angle((float*)&motor_now->m_pos_pid_now);
+		motor_now->m_pos_pid_now =  angle_now / conf_now->p_pid_ang_div;
 	}
 
 #ifdef AD2S1205_SAMPLE_GPIO

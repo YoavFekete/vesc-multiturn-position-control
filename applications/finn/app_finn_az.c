@@ -420,9 +420,7 @@ static THD_FUNCTION(control_thread, arg) {
 		float angle_target_no_filter = m_pod_state.req_angle + m_pod_state.angle_home + m_pod_state.angle_offset;
 
 		float angle_now = mc_interface_get_pid_pos_now();
-		if (angle_now > 180.0) {
-			angle_now -= 360.0;
-		}
+	
 		angle_now *= APP_FINN_WRAP_FACTOR;
 
 		if (!m_pod_state.homing_done) {
@@ -482,7 +480,7 @@ static THD_FUNCTION(control_thread, arg) {
 
 		if (UTILS_AGE_S(m_pod_state.last_update) < 2.0 && m_motors_enabled) {
 			timeout_reset();
-			mc_interface_set_pid_pos(angle_target / APP_FINN_WRAP_FACTOR);
+			mc_interface_set_pid_pos(angle_target / APP_FINN_WRAP_FACTOR, 0.0);
 			m_pod_state.wait_data = false;
 		} else {
 //			m_pod_state.req_angle = angle_now - m_pod_state.angle_home - m_pod_state.angle_offset;

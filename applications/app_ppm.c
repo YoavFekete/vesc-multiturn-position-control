@@ -371,11 +371,11 @@ static THD_FUNCTION(ppm_thread, arg) {
 				if (mc_interface_get_control_mode() != CONTROL_MODE_POS){ 	
 					if (fabsf(angle - mc_interface_get_pid_pos_now()) < 10) {
 						// enable position control.
-						mc_interface_set_pid_pos(angle);
+						mc_interface_set_pid_pos(angle, 0.0);
 					}
 					break;
 				} else {
-					mc_interface_set_pid_pos(angle);
+					mc_interface_set_pid_pos(angle,0.0);
 				}
 			}
 			break;

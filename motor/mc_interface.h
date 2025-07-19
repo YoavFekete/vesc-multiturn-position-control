@@ -44,7 +44,8 @@ mc_control_mode mc_interface_get_control_mode(void);
 void mc_interface_set_duty(float dutyCycle);
 void mc_interface_set_duty_noramp(float dutyCycle);
 void mc_interface_set_pid_speed(float rpm);
-void mc_interface_set_pid_pos(float pos);
+void mc_interface_set_pid_pos(float pos, float feedforward);
+void mc_interface_set_pid_stream_pos(float pos, float feedforward);
 void mc_interface_set_current(float current);
 void mc_interface_set_brake_current(float current);
 void mc_interface_set_current_rel(float val);
@@ -56,6 +57,7 @@ void mc_interface_set_openloop_phase(float current, float phase);
 void mc_interface_set_openloop_duty(float dutyCycle, float rpm);
 void mc_interface_set_openloop_duty_phase(float dutyCycle, float phase);
 int mc_interface_set_tachometer_value(int steps);
+void mc_interface_set_pid_stream_frequency (uint16_t frequency, uint16_t start_size);
 void mc_interface_brake_now(void);
 void mc_interface_release_motor(void);
 void mc_interface_release_motor_override(void);
@@ -86,6 +88,7 @@ float mc_interface_read_reset_avg_vd(void);
 float mc_interface_read_reset_avg_vq(void);
 float mc_interface_get_pid_pos_set(void);
 float mc_interface_get_pid_pos_now(void);
+void mc_interface_get_pid_pos_high_res_control_data(control_log_t *data);
 void mc_interface_update_pid_pos_offset(float angle_now, bool store);
 float mc_interface_get_last_sample_adc_isr_duration(void);
 void mc_interface_sample_print_data(debug_sampling_mode mode, uint16_t len, uint8_t decimation, bool raw, 
@@ -131,7 +134,7 @@ void mc_interface_stat_reset(void);
 // MC implementation functions
 void mc_interface_set_fault_info(const char *str, int argn, float arg0, float arg1);
 void mc_interface_fault_stop(mc_fault_code fault, bool is_second_motor, bool is_isr);
-int mc_interface_try_input(void);
+int mc_interface_try_input(bool is_called_from_stream);
 void mc_interface_mc_timer_isr(bool is_second_motor);
 
 // Interrupt handlers

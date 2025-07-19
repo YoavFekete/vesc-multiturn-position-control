@@ -403,6 +403,7 @@ typedef struct {
 	void (*can_set_current_brake)(uint8_t controller_id, float current);
 	void (*can_set_rpm)(uint8_t controller_id, float rpm);
 	void (*can_set_pos)(uint8_t controller_id, float pos);
+	void (*can_set_multiturn_pos_feedforward)(uint8_t controller_id, float pos, float feedforward);
 	void (*can_set_current_rel)(uint8_t controller_id, float current_rel);
 	void (*can_set_current_rel_off_delay)(uint8_t controller_id, float current_rel, float off_delay);
 	void (*can_set_current_brake_rel)(uint8_t controller_id, float current_rel);

@@ -41,6 +41,7 @@
 #include "crc.h"
 #include "bms.h"
 #include "events.h"
+#include "position_multiturn.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -116,6 +117,19 @@ __attribute__((section(".ram4"))) static volatile int16_t m_curr_fir_samples[ADC
 __attribute__((section(".ram4"))) static volatile int16_t m_f_sw_samples[ADC_SAMPLE_MAX_LEN];
 __attribute__((section(".ram4"))) static volatile int8_t m_phase_samples[ADC_SAMPLE_MAX_LEN];
 
+#define TRAJ_BUF_SIZE         64
+#define TRAJ_BUF_MASK         (TRAJ_BUF_SIZE - 1)
+#define MAX_STREAM_START_SIZE  ((3*TRAJ_BUF_SIZE)/4)
+#define MAX_STREAM_FREQUENCY   1000
+
+static float pos_buf[TRAJ_BUF_SIZE];
+static float ff_buf[TRAJ_BUF_SIZE];
+static volatile uint16_t head = 0, tail = 0;
+
+static volatile bool        started_pos_stream   = false;
+static volatile float       pos_stream_frequency = 0;  // in HZ
+static volatile uint16_t	buffer_start_size    = TRAJ_BUF_SIZE+1;
+
 static volatile int m_sample_len;
 static volatile int m_sample_int;
 static volatile bool m_sample_raw;
@@ -160,6 +174,8 @@ static THD_FUNCTION(fault_stop_thread, arg);
 static thread_t *fault_stop_tp;
 static THD_WORKING_AREA(stat_thread_wa, 512);
 static THD_FUNCTION(stat_thread, arg);
+static THD_WORKING_AREA(stream_trajectory_thread_wa, 512);
+static THD_FUNCTION(stream_trajectory_thread, arg);
 
 void mc_interface_init(void) {
 	memset((void*)&m_motor_1, 0, sizeof(motor_if_state_t));
@@ -195,6 +211,7 @@ void mc_interface_init(void) {
 	chThdCreateStatic(sample_send_thread_wa, sizeof(sample_send_thread_wa), NORMALPRIO - 1, sample_send_thread, NULL);
 	chThdCreateStatic(fault_stop_thread_wa, sizeof(fault_stop_thread_wa), HIGHPRIO - 3, fault_stop_thread, NULL);
 	chThdCreateStatic(stat_thread_wa, sizeof(stat_thread_wa), NORMALPRIO, stat_thread, NULL);
+	chThdCreateStatic(stream_trajectory_thread_wa, sizeof(stream_trajectory_thread_wa),NORMALPRIO, stream_trajectory_thread, NULL);
 
 	int motor_old = mc_interface_get_motor_thread();
 	mc_interface_select_motor_thread(1);
@@ -542,7 +559,7 @@ void mc_interface_set_duty(float dutyCycle) {
 		SHUTDOWN_RESET();
 	}
 
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -568,7 +585,7 @@ void mc_interface_set_duty_noramp(float dutyCycle) {
 		SHUTDOWN_RESET();
 	}
 
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -594,7 +611,7 @@ void mc_interface_set_pid_speed(float rpm) {
 		SHUTDOWN_RESET();
 	}
 
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -615,10 +632,51 @@ void mc_interface_set_pid_speed(float rpm) {
 	events_add("set_pid_speed", rpm);
 }
 
-void mc_interface_set_pid_pos(float pos) {
+void mc_interface_set_pid_stream_frequency (uint16_t frequency, uint16_t start_size) 
+{
+	if (start_size>MAX_STREAM_START_SIZE) start_size = MAX_STREAM_START_SIZE ; // max start size is 32 to make sure we never ge the buffer to full 
+	if (frequency>MAX_STREAM_FREQUENCY) frequency = MAX_STREAM_FREQUENCY ;
+	pos_stream_frequency = (float)frequency;  
+	buffer_start_size = start_size;
+} 
+
+void mc_interface_set_pid_stream_pos(float pos, float feedforward) 
+{
+	SHUTDOWN_RESET();
+	//only in FOC we do the streaming of postion pid control
+	if (motor_now()->m_conf.motor_type!=MOTOR_TYPE_FOC){
+		return;
+	}
+
+	 // if we are just enetering pos_stream from another  control mode then empty the buffer
+	if (!started_pos_stream)
+		head = tail;
+	// here we set started_pos_stream to true, this function is called by all control type but other set it to false 
+	// it will also stop the thread  when called from any other function with false input param
+	mc_interface_try_input(true);
+
+ 
+	
+	//add point to buffer its the only producer to the buffer 
+	uint16_t next = (head + 1) & (TRAJ_BUF_SIZE - 1);
+    if (next != tail) {
+        // buffer still has space 
+        pos_buf[head] = pos;
+		ff_buf[head] = feedforward;
+    	// compiler barrier to ensure the store to traj_buf happens
+    	// before we publish the new head value
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+		head = next;
+    }
+	
+
+	
+}
+
+void mc_interface_set_pid_pos(float pos, float feedforward) {
 	SHUTDOWN_RESET();
 
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -635,16 +693,14 @@ void mc_interface_set_pid_pos(float pos) {
 		}
 	}
 
-	utils_norm_angle(&pos);
-
 	switch (conf->motor_type) {
 	case MOTOR_TYPE_BLDC:
 	case MOTOR_TYPE_DC:
-		mcpwm_set_pid_pos(pos);
+		mcpwm_set_pid_pos(pos, feedforward);
 		break;
 
 	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_pid_pos(pos);
+		mcpwm_foc_set_pid_pos(pos, feedforward);
 		break;
 
 	default:
@@ -659,7 +715,7 @@ void mc_interface_set_current(float current) {
 		SHUTDOWN_RESET();
 	}
 
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -685,7 +741,7 @@ void mc_interface_set_brake_current(float current) {
 		SHUTDOWN_RESET();
 	}
 
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -761,7 +817,7 @@ void mc_interface_set_handbrake(float current) {
 		SHUTDOWN_RESET();
 	}
 
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -802,7 +858,7 @@ void mc_interface_set_openloop_current(float current, float rpm) {
 		SHUTDOWN_RESET();
 	}
 
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -826,7 +882,7 @@ void mc_interface_set_openloop_phase(float current, float phase){
 		SHUTDOWN_RESET();
 	}
 
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -850,7 +906,7 @@ void mc_interface_set_openloop_duty(float dutyCycle, float rpm){
 		SHUTDOWN_RESET();
 	}
 
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -874,7 +930,7 @@ void mc_interface_set_openloop_duty_phase(float dutyCycle, float phase){
 		SHUTDOWN_RESET();
 	}
 
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -904,7 +960,7 @@ void mc_interface_brake_now(void) {
  * Disconnect the motor and let it turn freely.
  */
 void mc_interface_release_motor(void) {
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -1438,11 +1494,11 @@ float mc_interface_get_pid_pos_now(void) {
 	switch (conf->motor_type) {
 	case MOTOR_TYPE_BLDC:
 	case MOTOR_TYPE_DC:
-		ret = encoder_read_deg();
+		ret = position_update_multiturn(encoder_read_deg());
 		break;
 
 	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_pid_pos_now();
+		ret = position_update_multiturn(mcpwm_foc_get_pid_pos_now());
 		break;
 
 	default:
@@ -1457,9 +1513,13 @@ float mc_interface_get_pid_pos_now(void) {
 
 	ret *= DIR_MULT;
 	ret -= motor_now()->m_conf.p_pid_offset;
-	utils_norm_angle(&ret);
 
 	return ret;
+}
+
+void mc_interface_get_pid_pos_high_res_control_data(control_log_t *data)
+{
+	mcpwm_foc_get_pid_pos_high_res_control_data(data);
 }
 
 /**
@@ -1470,7 +1530,6 @@ void mc_interface_update_pid_pos_offset(float angle_now, bool store) {
 	*mcconf = *mc_interface_get_configuration();
 
 	mcconf->p_pid_offset += mc_interface_get_pid_pos_now() - angle_now;
-	utils_norm_angle(&mcconf->p_pid_offset);
 
 	if (store) {
 		conf_general_store_mc_configuration(mcconf, mc_interface_get_motor_thread() == 2);
@@ -1745,7 +1804,7 @@ bool mc_interface_wait_for_motor_release_both(float timeout) {
 }
 
 void mc_interface_set_current_off_delay(float delay_sec) {
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 
@@ -1783,7 +1842,9 @@ void mc_interface_override_temp_motor(float temp) {
  * The amount if milliseconds left until user commands are allowed again.
  *
  */
-int mc_interface_try_input(void) {
+int mc_interface_try_input(bool is_called_from_stream) {
+	// wll be set to true only if called from set pos stream
+	started_pos_stream = is_called_from_stream;
 	// TODO: Remove this later
 	if (mc_interface_get_state() == MC_STATE_DETECTING) {
 		mcpwm_stop_pwm();
@@ -2680,6 +2741,52 @@ static void run_timer_tasks(volatile motor_if_state_t *motor) {
 	hw_update_speed_sensor();
 #endif
 }
+
+static THD_FUNCTION(stream_trajectory_thread, arg){
+  (void)arg;
+  chRegSetThreadName("traj pull");
+  bool buffer_pop_started = false;
+  float pos, ff;
+  systime_t period_ticks;
+  systime_t next;
+  for (;;) {
+	// check if stream startet
+    if (started_pos_stream)  {
+		// if we didnt start to pop and the number of traj is what is requierd then set inner falg to start pop
+		if (!buffer_pop_started) 
+		{	
+			if (((head - tail) & TRAJ_BUF_MASK)>=buffer_start_size) 
+			{
+				buffer_pop_started = true;
+				period_ticks = MS2ST((int)(1000.0f / pos_stream_frequency));
+				next = chVTGetSystemTimeX();
+			}
+			else {
+				chThdSleepMilliseconds(1);
+			}
+		}
+		else
+		{
+			// buffer not empty
+			if (head != tail) {
+				__atomic_thread_fence(__ATOMIC_ACQUIRE);
+				pos = pos_buf[tail];
+				ff = ff_buf[tail];
+				tail = (tail + 1) & (TRAJ_BUF_SIZE - 1);
+				mc_interface_set_pid_pos(pos,ff);
+			}
+			next += period_ticks;
+    		chThdSleepUntil(next);
+      	}
+    } 
+	else {
+		buffer_pop_started = false; // reset inner stream flag;
+   	 	// not running—sleep until the next flag check
+   		chThdSleepMilliseconds(2);
+	}
+  }
+}
+
 
 static THD_FUNCTION(timer_thread, arg) {
 	(void)arg;

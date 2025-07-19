@@ -1666,7 +1666,14 @@ static lbm_value ext_set_rpm(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_set_pos(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 	timeout_reset();
-	mc_interface_set_pid_pos(lbm_dec_as_float(args[0]));
+	mc_interface_set_pid_pos(lbm_dec_as_float(args[0]),0.0);
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_set_multiturn_pos_feedforward(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+	timeout_reset();
+	mc_interface_set_pid_pos(lbm_dec_as_float(args[0]),lbm_dec_as_float(args[1]));
 	return ENC_SYM_TRUE;
 }
 
@@ -2203,6 +2210,13 @@ static lbm_value ext_can_rpm(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_can_pos(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(2);
 	comm_can_set_pos(lbm_dec_as_i32(args[0]), lbm_dec_as_float(args[1]));
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_multiturn_pos_feedforward(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(3);
+	comm_can_set_multiturn_pos_feedforward(
+		lbm_dec_as_i32(args[0]),lbm_dec_as_float(args[1]), lbm_dec_as_float(args[2]));
 	return ENC_SYM_TRUE;
 }
 
@@ -3966,10 +3980,7 @@ static lbm_value ext_conf_set_pid_offset(lbm_value *args, lbm_uint argn) {
 	}
 
 	float angle = lbm_dec_as_float(args[0]);
-	if (angle < -360.0 || angle > 360.0) {
-		return ENC_SYM_TERROR;
-	}
-
+	
 	bool store = false;
 	if (argn == 2) {
 		store = lbm_is_symbol_true(args[1]);
@@ -5336,6 +5347,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("set-handbrake-rel", ext_set_handbrake_rel);
 	lbm_add_extension("set-rpm", ext_set_rpm);
 	lbm_add_extension("set-pos", ext_set_pos);
+	lbm_add_extension("set-multiturn_pos_feedforward", ext_set_multiturn_pos_feedforward);
 	lbm_add_extension("foc-openloop", ext_foc_openloop);
 
 	lbm_add_extension("foc-beep", ext_foc_beep);
@@ -5404,6 +5416,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("canset-brake-rel", ext_can_brake_rel);
 	lbm_add_extension("canset-rpm", ext_can_rpm);
 	lbm_add_extension("canset-pos", ext_can_pos);
+	lbm_add_extension("canset-multiturn-pos-feedforward", ext_can_multiturn_pos_feedforward);
 
 	lbm_add_extension("canget-current", ext_can_get_current);
 	lbm_add_extension("canget-current-dir", ext_can_get_current_dir);

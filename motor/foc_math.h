@@ -151,6 +151,7 @@ typedef struct {
 	float m_openloop_phase;
 	foc_pwm_mode m_pwm_mode;
 	float m_pos_pid_set;
+	float m_feedforward_set;
 	float m_speed_pid_set_rpm;
 	float m_speed_command_rpm;
 	float m_phase_now_observer;
@@ -255,5 +256,6 @@ float foc_correct_hall(float angle, float dt, motor_all_state_t *motor, int hall
 void foc_run_fw(motor_all_state_t *motor, float dt);
 void foc_hfi_adjust_angle(float ang_err, motor_all_state_t *motor, float dt);
 void foc_precalc_values(motor_all_state_t *motor);
-
+void foc_get_pid_pos_high_res_control_data(control_log_t *data);
+void log_control(float angle_now,float desierd_pid_value,float output,   motor_all_state_t *motor);
 #endif /* FOC_MATH_H_ */

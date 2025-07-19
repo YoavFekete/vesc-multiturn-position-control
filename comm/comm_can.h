@@ -42,6 +42,7 @@ void comm_can_set_current_off_delay(uint8_t controller_id, float current, float 
 void comm_can_set_current_brake(uint8_t controller_id, float current);
 void comm_can_set_rpm(uint8_t controller_id, float rpm);
 void comm_can_set_pos(uint8_t controller_id, float pos);
+void comm_can_set_multiturn_pos_feedforward(uint8_t controller_id, float pos,float feedforward);
 void comm_can_set_current_rel(uint8_t controller_id, float current_rel);
 void comm_can_set_current_rel_off_delay(uint8_t controller_id, float current_rel, float off_delay);
 void comm_can_set_current_brake_rel(uint8_t controller_id, float current_rel);
@@ -94,5 +95,9 @@ void comm_can_send_status3(uint8_t id, bool replace);
 void comm_can_send_status4(uint8_t id, bool replace);
 void comm_can_send_status5(uint8_t id, bool replace);
 void comm_can_send_status6(uint8_t id, bool replace);
+
+void comm_can_send_vel_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id);
+void comm_can_send_pos_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id);
+void comm_can_send_cur_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id, uint16_t dt_10us);
 
 #endif /* COMM_CAN_H_ */

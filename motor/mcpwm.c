@@ -57,6 +57,7 @@ static volatile float dutycycle_now;
 static volatile float rpm_now;
 static volatile float speed_pid_set_rpm;
 static volatile float pos_pid_set_pos;
+static volatile float pos_pid_set_feedforward;
 static volatile float current_set;
 static volatile int tachometer;
 static volatile int tachometer_abs;
@@ -100,6 +101,11 @@ static volatile uint32_t rpm_timer_start;
 static volatile int curr2_sum;
 static volatile int curr2_offset;
 #endif
+
+// Multi turn encoder integration
+#define MTE_ANGLE_WRAP_THRESHOLD    180.0f  // degrees
+static volatile int   mte_round_count = 0;
+static volatile float mte_prev_angle   = 0.0f;
 
 // KV FIR filter
 #define KV_FIR_TAPS_BITS		7
@@ -187,6 +193,7 @@ void mcpwm_init(volatile mc_configuration *configuration) {
 	dutycycle_now = 0.0;
 	speed_pid_set_rpm = 0.0;
 	pos_pid_set_pos = 0.0;
+	pos_pid_set_feedforward = 0.0;
 	current_set = 0.0;
 	tachometer = 0;
 	tachometer_abs = 0;
@@ -610,9 +617,10 @@ void mcpwm_set_pid_speed(float rpm) {
  * @param pos
  * The desired position of the motor in degrees.
  */
-void mcpwm_set_pid_pos(float pos) {
+void mcpwm_set_pid_pos(float pos,float feedforward) {
 	control_mode = CONTROL_MODE_POS;
 	pos_pid_set_pos = pos;
+	pos_pid_set_feedforward = feedforward;
 
 	if (state != MC_STATE_RUNNING) {
 		set_duty_cycle_hl(conf->l_min_duty);
@@ -1257,7 +1265,7 @@ static void run_pid_control_pos(float dt, float pos_now) {
 	}
 
 	// Compute error
-	float error = utils_angle_difference(pos_now, pos_pid_set_pos);
+	float error = pos_now - pos_pid_set_pos;
 
 	// Compute parameters
 	p_term = error * conf->p_pid_kp;
@@ -1276,7 +1284,7 @@ static void run_pid_control_pos(float dt, float pos_now) {
 	prev_error = error;
 
 	// Calculate output
-	float output = p_term + i_term + d_term;
+	float output = p_term + i_term + d_term + pos_pid_set_feedforward;
 	utils_truncate_number(&output, -1.0, 1.0);
 
 	current_set = output * conf->lo_current_max;
@@ -2120,16 +2128,29 @@ void mcpwm_adc_int_handler(void *p, uint32_t flags) {
 	mc_interface_mc_timer_isr(false);
 
 	if (encoder_is_configured()) {
-		float pos = encoder_read_deg();
-		run_pid_control_pos(1.0 / switching_frequency_now, pos);
-		pll_run(-DEG2RAD_f(pos), 1.0 / switching_frequency_now, &m_pll_phase, &m_pll_speed);
+		float raw = encoder_read_deg();
+
+		// integrate multiturn encoder
+		float delta = raw - mte_prev_angle;
+		// detect wrap-around crossing
+		if (delta > MTE_ANGLE_WRAP_THRESHOLD) {
+			// jumped from high->low (e.g. 359 → 1) ⇒ decrement turns
+			mte_round_count--;
+		} else if (delta < -MTE_ANGLE_WRAP_THRESHOLD) {
+			// jumped from low->high (e.g. 1 → 359) ⇒ increment turns
+			mte_round_count++;
+		}
+   		mte_prev_angle = raw;
+		raw += (float)mte_round_count * 360.0f;
+		run_pid_control_pos(1.0 / switching_frequency_now, raw);
+		pll_run(-DEG2RAD_f(raw), 1.0 / switching_frequency_now, &m_pll_phase, &m_pll_speed);
 	}
 
 	last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
 }
 
 void mcpwm_set_detect(void) {
-	if (mc_interface_try_input()) {
+	if (mc_interface_try_input(false)) {
 		return;
 	}
 

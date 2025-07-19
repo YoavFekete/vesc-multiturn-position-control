@@ -1114,18 +1114,14 @@ void terminal_process_string(char *str) {
 		HW_RESET_DRV_FAULTS();
 	} else if (strcmp(argv[0], "update_pid_pos_offset") == 0) {
 		if (argc == 3) {
-			float angle_now = -500.0;
+			float angle_now = mc_interface_get_pid_pos_now();
 			int store = false;
 
 			sscanf(argv[1], "%f", &angle_now);
 			sscanf(argv[2], "%d", &store);
-
-			if (angle_now > -360.0 && angle_now < 360.0) {
-				mc_interface_update_pid_pos_offset(angle_now, store);
-				commands_printf("OK\n");
-			} else {
-				commands_printf("Invalid arguments\n");
-			}
+			
+			mc_interface_update_pid_pos_offset(angle_now, store);
+			commands_printf("OK\n");
 		}
 	} else if (strcmp(argv[0], "fwinfo") == 0) {
 		commands_printf("GIT Branch: %s", GIT_BRANCH_NAME);

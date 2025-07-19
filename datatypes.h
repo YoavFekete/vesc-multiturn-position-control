@@ -1099,6 +1099,9 @@ typedef enum {
 	//COMM_PINLOCK3							= 155,
 
 	COMM_SHUTDOWN							= 156,
+
+	// --- Multi‐turn position feedforward command (revolutions + micro‐degrees) + (feedforward data) ---
+    COMM_SET_MULTITURN_POS_FEEDFORWARD      = 157,
 } COMM_PACKET_ID;
 
 // CAN commands
@@ -1166,7 +1169,12 @@ typedef enum {
 	CAN_PACKET_GNSS_LAT						= 60,
 	CAN_PACKET_GNSS_LON						= 61,
 	CAN_PACKET_GNSS_ALT_SPEED_HDOP			= 62,
-	CAN_PACKET_MAKE_ENUM_32_BITS = 0xFFFFFFFF,
+	CAN_PACKET_SET_MULTITURN_POS_FEEDFORWARD= 63,
+	CAN_PACKET_STATUS_VEL					= 64,
+	CAN_PACKET_STATUS_POS					= 65,
+	CAN_PACKET_STATUS_CNT					= 66,
+	CAN_PACKET_SET_POS_STREAM_PARAMS        = 67,
+	CAN_PACKET_MAKE_ENUM_32_BITS 			= 0xFFFFFFFF,
 } CAN_PACKET_ID;
 
 typedef struct {
@@ -1334,6 +1342,20 @@ typedef struct {
     float vd;
     float vq;
 } mc_values;
+
+
+typedef struct {
+    uint32_t timestamp_14MHz;   // time stamp in ticks ta 14MHZ
+    float    curent_pid_pos;    // measured  multiturn encoder angle in degrees
+	float    desierd_pid_pos;   // measured encoder angle in degrees
+    float    v1;                // last messured deg/ms velocity
+	float    v2;                // 2 last messured deg/ms velocity
+	float    v3;                // 3 last messured deg/ms velocity
+	float    v4;                // 4 last messured deg/ms velocity
+    float    d_applied;         // actual duty cycle (-1.0 to 1.0) value calulated from control loop
+	float    a_applied;			// actual amper value calulated from control loop
+    float    iq_measured;       // actual motor current in amps
+} control_log_t;
 
 typedef enum {
 	NRF_PAIR_STARTED = 0,

@@ -786,6 +786,7 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 		cif.cif.can_set_current_brake = comm_can_set_current_brake;
 		cif.cif.can_set_rpm = comm_can_set_rpm;
 		cif.cif.can_set_pos = comm_can_set_pos;
+		cif.cif.can_set_multiturn_pos_feedforward = comm_can_set_multiturn_pos_feedforward;
 		cif.cif.can_set_current_rel = comm_can_set_current_rel;
 		cif.cif.can_set_current_rel_off_delay = comm_can_set_current_rel_off_delay;
 		cif.cif.can_set_current_brake_rel = comm_can_set_current_brake_rel;

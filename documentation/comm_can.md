@@ -49,11 +49,13 @@ The following simple commands are available:
 | CAN_PACKET_SET_CURRENT | 1 | 1000 | A | Motor Current | \-MOTOR_MAX to MOTOR_MAX |
 | CAN_PACKET_SET_CURRENT_BRAKE | 2 | 1000 | A | Braking Current | \-MOTOR_MAX to MOTOR_MAX |
 | CAN_PACKET_SET_RPM | 3 | 1 | RPM | RPM | \-MAX_RPM to MAX_RPM |
-| CAN_PACKET_SET_POS | 4 | 1000000 | Degrees |  | 0 to 360 |
+| CAN_PACKET_SET_POS | 4 | 1000000 | Degrees |  | 2 147 483 647 µ° ≈ ±2 147.48°, ~±6 turns |
 | CAN_PACKET_SET_CURRENT_REL | 10 | 100000 | % / 100 |  | \-1.0 to 1.0 |
 | CAN_PACKET_SET_CURRENT_BRAKE_REL | 11 | 100000 | % / 100 |  | \-1.0 to 1.0 |
 | CAN_PACKET_SET_CURRENT_HANDBRAKE | 12 | 1000 | A |  | \-MOTOR_MAX to MOTOR_MAX |
 | CAN_PACKET_SET_CURRENT_HANDBRAKE_REL | 13 | 100000 | % / 100 |  | \-1.0 to 1.0 |
+| CAN_PACKET_SET_MULTI_TURN_POS_FEEDFORWARD | 63 | 	Revs: 1 count = 1 rev (8 bit signed)
+Frac: 2²⁴–1 counts  FF term: 1000000 | Degrees |  14 bit deg un sigend, 18 bit signed number of revolutions, 32 bit feedforward control term  | +-131071*360 + 0...360 deg  |
 
 #### C Code
 
@@ -77,6 +79,7 @@ typedef enum {
 	CAN_PACKET_SET_CURRENT_BRAKE_REL,
 	CAN_PACKET_SET_CURRENT_HANDBRAKE,
 	CAN_PACKET_SET_CURRENT_HANDBRAKE_REL,
+	CAN_PACKET_SET_MULTITURN_POS_FEEDFORWARD = 63,
 	CAN_PACKET_MAKE_ENUM_32_BITS = 0xFFFFFFFF,
 } CAN_PACKET_ID;
 
@@ -149,6 +152,21 @@ void comm_can_set_pos(uint8_t controller_id, float pos) {
 			((uint32_t)CAN_PACKET_SET_POS << 8), buffer, send_index);
 }
 
+void comm_can_set_multiturn_pos_feedforward(uint8_t controller_id, float pos, float feedforward) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+
+    // Append big-endian uint32
+    buffer_append_uint32(buffer, pack_multiturn_pos32(pos), &send_index);
+	buffer_append_int32(buffer, (int32_t)(feedforward * 1000000.0), &send_index);
+
+    // 4) Transmit 
+    can_transmit_eid(
+        controller_id | ((uint32_t)CAN_PACKET_SET_MULTITURN_POS_FEEDFORWARD << 8),
+        buffer, send_index
+    );
+}
+
 void comm_can_set_current_rel(uint8_t controller_id, float current_rel) {
 	int32_t send_index = 0;
 	uint8_t buffer[4];
@@ -207,7 +225,20 @@ There are 6 different status messages available with the following data:
 | CAN_PACKET_STATUS_3 | 15 | Wh Used, Wh Charged |
 | CAN_PACKET_STATUS_4 | 16 | Temp Fet, Temp Motor, Current In, PID position |
 | CAN_PACKET_STATUS_5 | 27 | Tachometer, Voltage In |
-| CAN_PACKET_STATUS_6 | 28 | ADC1, ADC2, ADC3, PPM |
+| CAN_PACKET_STATUS_6 | 58 | ADC1, ADC2, ADC3, PPM |
+
+
+
+There are 3 different control status messages available.
+They are send togather and represent high qulaity control data log for learning feedforward of the  system
+they have  the following data ():
+
+| **Command Name** | **Command Id** | **Content** |
+| CAN_PACKET_STATUS_VEL | 64 | v1 v3 v3 v4 the actual  vlecoties calulated from encoder in the last FOC 4 control PID loop, v1 is the last one read |
+| CAN_PACKET_STATUS_POS | 65 | multiturn pos pid , target pid multiturn pos |
+| CAN_PACKET_STATUS_CNT | 66 | last control term calulated in pid as effort [-1,1],last control term calulated in pid as cuurent , curent of the motor, time stamp |
+
+the ID of each of this essage has sample ID in bits 16–28 which are used to macth which message where send togatehr and if same message was skipped ,  
 
 The content of the status messages is encoded as follows:
 
@@ -257,6 +288,36 @@ The content of the status messages is encoded as follows:
 | B2 - B3 | ADC2 | V | 1000 |
 | B4 - B5 | ADC3 | V | 1000 |
 | B6 - B7 | PPM | % / 100 | 1000 |
+
+
+
+**CAN_PACKET_STATUS_VEL**
+
+| **Byte** | **Data** | **Unit** | **Scale** |
+|------|------|------|-------|
+| B0 - B1 | last pid messured velcity | angle deg/ms  | 100 |
+| B2 - B3 | 2 last pid messured velcity | angle deg/ms  | 100 |
+| B4 - B5 | 3 last pid messured velcity | angle deg/ms  | 100 |
+| B6 - B7 | 4 last pid messured velcity | angle deg/ms  | 100 |
+
+
+**CAN_PACKET_STATUS_POS**
+
+| **Byte** | **Data** | **Unit** | **Scale** |
+|------|------|------|-------|
+| B0 - B3 | multiturn pid pos | angle deg | 14 bit angle 18 bit tusn and diraction |
+| B4 - B7 | multiturn pid desier pos | angle deg | 14 bit angle 18 bit tusn and diraction |
+
+
+**CAN_PACKET_STATUS_CNT**
+
+| **Byte** | **Data** | **Unit** | **Scale** |
+|------|------|------|-------|
+| B0 - B1 | d_applied | [-1,1]  | 32767 |
+| B2 - B3 | a_applied | amper  | 100 |
+| B2 - B3 | iq_measured |  amper  | 100 |
+| B6 - B7 | time of sample | 10us | 1 |
+
 
 ## Frequently Asked Questions (FAQ)
 

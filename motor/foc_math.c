@@ -20,6 +20,23 @@
 #include "foc_math.h"
 #include "utils_math.h"
 #include <math.h>
+#include <string.h>    
+#include "timer.h"     
+
+static volatile control_log_t log_buffers[2];
+static volatile uint8_t       log_active_idx = 0;  // 0 or 1
+
+void foc_get_pid_pos_high_res_control_data(control_log_t *data){
+    uint8_t ridx = log_active_idx;  // safe atomic read
+	memcpy(
+        data,
+        (const void *)&log_buffers[ridx],
+        sizeof(control_log_t)
+    );
+}
+
+
+
 
 // See http://cas.ensmp.fr/~praly/Telechargement/Journaux/2010-IEEE_TPEL-Lee-Hong-Nam-Ortega-Praly-Astolfi.pdf
 void foc_observer_update(float v_alpha, float v_beta, float i_alpha, float i_beta,
@@ -376,6 +393,41 @@ void foc_svm(float alpha, float beta, uint32_t PWMFullDutyCycle,
 	*svm_sector = sector;
 }
 
+void log_control(float angle_now,float desierd_pid_value,float output,   motor_all_state_t *motor) {
+	uint8_t widx = log_active_idx ^ 1;  // write to inactive buffer
+	volatile control_log_t *last_log = &log_buffers[log_active_idx];
+    volatile control_log_t *log = &log_buffers[widx];
+
+    log->timestamp_14MHz =  timer_time_now();  // time stamp in ticks ta 14MHZ
+	
+	// Position info
+	log->curent_pid_pos  = angle_now;      // Current angle in degrees (multiturn)
+	log->desierd_pid_pos = desierd_pid_value;      // Setpoint in degrees
+
+	// Velocity history — you should have these from your encoder
+	uint32_t dt_ticks = log->timestamp_14MHz - last_log->timestamp_14MHz;
+
+	// avoid div-by-zero on first frame
+	if (dt_ticks > 0) {
+		log->v1 = (angle_now - last_log->curent_pid_pos) * (14000.0f / dt_ticks);  // deg/ms
+	} else {
+		log->v1 = 0.0f;
+	}
+	log->v2 = last_log->v1;
+	log->v3 = last_log->v2;
+	log->v4 = last_log->v3;
+
+	// Control efforts
+	log->d_applied     = output;                 // duty cycle output in range [-1.0, 1.0]
+	log->a_applied     = motor->m_iq_set;        // command current in amperes (before FOC)
+
+	// measured current in amperes (FOC feedback)
+	log->iq_measured  = SIGN(motor->m_motor_state.vq * motor->m_motor_state.iq_filter) * motor->m_motor_state.i_abs_filter;  
+
+	// Atomically publish
+    log_active_idx = widx; 
+}
+
 void foc_run_pid_control_pos(bool index_found, float dt, motor_all_state_t *motor) {
 	mc_configuration *conf_now = motor->m_conf;
 
@@ -397,7 +449,7 @@ void foc_run_pid_control_pos(bool index_found, float dt, motor_all_state_t *moto
 	}
 
 	// Compute parameters
-	float error = utils_angle_difference(angle_set, angle_now);
+	float error = angle_set - angle_now; 
 	float error_sign = 1.0;
 
 	if (conf_now->m_sensor_port_mode != SENSOR_PORT_MODE_HALL) {
@@ -468,7 +520,7 @@ void foc_run_pid_control_pos(bool index_found, float dt, motor_all_state_t *moto
 	motor->m_pos_prev_proc = angle_now;
 
 	// Calculate output
-	float output = p_term + motor->m_pos_i_term + d_term + d_term_proc;
+	float output = p_term + motor->m_pos_i_term + d_term + d_term_proc + motor->m_feedforward_set;
 	utils_truncate_number(&output, -1.0, 1.0);
 
 	if (conf_now->m_sensor_port_mode != SENSOR_PORT_MODE_HALL) {
@@ -481,6 +533,7 @@ void foc_run_pid_control_pos(bool index_found, float dt, motor_all_state_t *moto
 	} else {
 		motor->m_iq_set = output * conf_now->l_current_max * conf_now->l_current_max_scale;;
 	}
+	log_control(angle_now, angle_set , output, motor);
 }
 
 void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *motor) {
@@ -562,6 +615,8 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 	}
 
 	motor->m_iq_set = output * conf_now->lo_current_max * conf_now->l_current_max_scale;
+
+	log_control( motor->m_pos_pid_now, motor->m_speed_pid_set_rpm , output, motor);
 }
 
 float foc_correct_encoder(float obs_angle, float enc_angle, float speed,
