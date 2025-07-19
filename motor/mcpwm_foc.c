@@ -41,6 +41,7 @@
 #include <stdio.h>
 #include "virtual_motor.h"
 #include "foc_math.h"
+#include "position_multiturn.h"
 
 // Private variables
 static volatile bool m_dccal_done = false;
