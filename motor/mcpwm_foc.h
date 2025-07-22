@@ -53,6 +53,7 @@ float mcpwm_foc_get_pid_pos_set(void);
 float mcpwm_foc_get_feedforward_set(void);
 float mcpwm_foc_get_pid_pos_now(void);
 void mcpwm_foc_get_pid_pos_high_res_control_data(control_log_t *data);
+void mcpwm_foc_get_pid_pos_partial_control_data(control_log_t *data);
 float mcpwm_foc_get_switching_frequency_now(void);
 float mcpwm_foc_get_sampling_frequency_now(void);
 float mcpwm_foc_get_rpm(void);

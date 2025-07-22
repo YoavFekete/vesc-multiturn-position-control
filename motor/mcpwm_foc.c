@@ -1049,6 +1049,12 @@ void mcpwm_foc_get_pid_pos_high_res_control_data(control_log_t *data){
 	foc_get_pid_pos_high_res_control_data(data);
 }
 
+void mcpwm_foc_get_pid_pos_partial_control_data(control_log_t *data) {
+	volatile motor_all_state_t *motor = get_motor_now();
+	data->curent_pid_pos = motor->m_pos_pid_set;
+	data->iq_measured  = SIGN(motor->m_motor_state.vq * motor->m_motor_state.iq_filter) * motor->m_motor_state.i_abs_filter;
+}
+
 /**
  * Get the current switching frequency.
  *

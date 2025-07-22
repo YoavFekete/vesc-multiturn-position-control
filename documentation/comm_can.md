@@ -235,8 +235,8 @@ they have  the following data ():
 
 | **Command Name** | **Command Id** | **Content** |
 | CAN_PACKET_STATUS_VEL | 64 | v1 v3 v3 v4 the actual  vlecoties calulated from encoder in the last FOC 4 control PID loop, v1 is the last one read |
-| CAN_PACKET_STATUS_POS | 65 | multiturn pos pid , target pid multiturn pos |
-| CAN_PACKET_STATUS_CNT | 66 | last control term calulated in pid as effort [-1,1],last control term calulated in pid as cuurent , curent of the motor, time stamp |
+| CAN_PACKET_STATUS_POS | 65 | multiturn pos pid , curent of the motor, time stamp  |
+| CAN_PACKET_STATUS_CNT | 66 | last control term calulated in pid as effort [-1,1],last control term calulated in pid as cuurent, target pid multiturn pos  |
 
 the ID of each of this essage has sample ID in bits 16–28 which are used to macth which message where send togatehr and if same message was skipped ,  
 
@@ -306,7 +306,9 @@ The content of the status messages is encoded as follows:
 | **Byte** | **Data** | **Unit** | **Scale** |
 |------|------|------|-------|
 | B0 - B3 | multiturn pid pos | angle deg | 14 bit angle 18 bit tusn and diraction |
-| B4 - B7 | multiturn pid desier pos | angle deg | 14 bit angle 18 bit tusn and diraction |
+| B4 - B5 | iq_measured |  amper  | 100 |
+| B6 - B7 | time of sample | 10us | 1 |
+
 
 
 **CAN_PACKET_STATUS_CNT**
@@ -315,8 +317,7 @@ The content of the status messages is encoded as follows:
 |------|------|------|-------|
 | B0 - B1 | d_applied | [-1,1]  | 32767 |
 | B2 - B3 | a_applied | amper  | 100 |
-| B2 - B3 | iq_measured |  amper  | 100 |
-| B6 - B7 | time of sample | 10us | 1 |
+| B4 - B7 | multiturn pid desier pos | angle deg | 14 bit angle 18 bit tusn and diraction |
 
 
 ## Frequently Asked Questions (FAQ)

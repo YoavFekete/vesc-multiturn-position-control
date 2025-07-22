@@ -53,6 +53,7 @@
 #define RX_FRAMES_SIZE	50
 #define RX_BUFFER_NUM	3
 #define RX_BUFFER_SIZE	PACKET_MAX_PL_LEN
+#define TICK_TO_10US (100000UL / CH_CFG_ST_FREQUENCY)
 
 #if CAN_ENABLE
 
@@ -1259,23 +1260,23 @@ void comm_can_send_vel_status(uint8_t id, bool replace, control_log_t *data, uin
 }
 
 
-void comm_can_send_pos_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id) {
+void comm_can_send_pos_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id, uint16_t dt_10us) {
 	int32_t send_index = 0;
 	uint8_t buffer[8];
 	buffer_append_uint32(buffer, pack_multiturn_pos32(data->curent_pid_pos), &send_index);                    
-	buffer_append_uint32(buffer, pack_multiturn_pos32(data->desierd_pid_pos), &send_index);          
+	buffer_append_int16(buffer, clamp_to_i16(data->iq_measured,100.0f), &send_index);      
+	buffer_append_uint16(buffer, dt_10us, &send_index);    
 	comm_can_transmit_eid_replace(id | ((uint32_t)CAN_PACKET_STATUS_POS << 8)| (sample_id << 16),
 			buffer, send_index, replace, 0);
 }
 
 
-void comm_can_send_cnt_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id, uint16_t dt_10us) {
+void comm_can_send_cnt_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id) {
 	int32_t send_index = 0;
 	uint8_t buffer[8];
 	buffer_append_int16(buffer, clamp_to_i16(data->d_applied,32767.0f), &send_index);                         
 	buffer_append_int16(buffer, clamp_to_i16(data->a_applied,100.0f), &send_index);      
-	buffer_append_int16(buffer, clamp_to_i16(data->iq_measured,100.0f), &send_index);      
-	buffer_append_uint16(buffer, dt_10us, &send_index);    
+	buffer_append_uint32(buffer, pack_multiturn_pos32(data->desierd_pid_pos), &send_index); 
 	comm_can_transmit_eid_replace(id | ((uint32_t)CAN_PACKET_STATUS_CNT << 8)| (sample_id << 16),
 			buffer, send_index, replace, 0);
 }
@@ -1519,6 +1520,7 @@ static THD_FUNCTION(cancom_status_thread, arg) {
 	control_log_t *control_log_p;
 	control_log_p = &control_log;
 	uint16_t sample_id= 0;
+	systime_t sleep_time = 0;
 	for(;;) {
 		const app_configuration *conf = app_get_configuration();
 
@@ -1535,10 +1537,14 @@ static THD_FUNCTION(cancom_status_thread, arg) {
 					dt = 9170000;
 				} 
 				comm_can_send_vel_status(conf->controller_id, false, control_log_p,  sample_id);
-				comm_can_send_pos_status(conf->controller_id, false, control_log_p,  sample_id);
-				comm_can_send_cnt_status(conf->controller_id, false, control_log_p,  sample_id, (uint16_t)(dt / 140));
-				sample_id = (sample_id + 1) & 0x1FFF;
+				comm_can_send_pos_status(conf->controller_id, false, control_log_p,  sample_id, (uint16_t)(dt / 140));
+				comm_can_send_cnt_status(conf->controller_id, false, control_log_p,  sample_id);
 			}
+			else {
+				mc_interface_get_pid_pos_partial_control_data(control_log_p);
+				comm_can_send_pos_status(conf->controller_id, false, control_log_p,  sample_id, (uint16_t)( sleep_time *TICK_TO_10US));
+			}
+			sample_id = (sample_id + 1) & 0x1FFF;
 		}
 
 		while (conf->can_status_rate_1 == 0) {
@@ -1546,7 +1552,7 @@ static THD_FUNCTION(cancom_status_thread, arg) {
 			conf = app_get_configuration();
 		}
 
-		systime_t sleep_time = CH_CFG_ST_FREQUENCY / conf->can_status_rate_1;
+		sleep_time = CH_CFG_ST_FREQUENCY / conf->can_status_rate_1;
 		if (sleep_time == 0) {
 			sleep_time = 1;
 		}

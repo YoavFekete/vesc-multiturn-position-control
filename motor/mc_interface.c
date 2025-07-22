@@ -1522,6 +1522,11 @@ void mc_interface_get_pid_pos_high_res_control_data(control_log_t *data)
 	mcpwm_foc_get_pid_pos_high_res_control_data(data);
 }
 
+void mc_interface_get_pid_pos_partial_control_data(control_log_t *data)
+{
+	mcpwm_foc_get_pid_pos_partial_control_data(data);
+}
+
 /**
  * Update the offset such that the current angle becomes angle_now
  */
