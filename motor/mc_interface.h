@@ -44,7 +44,7 @@ mc_control_mode mc_interface_get_control_mode(void);
 void mc_interface_set_duty(float dutyCycle);
 void mc_interface_set_duty_noramp(float dutyCycle);
 void mc_interface_set_pid_speed(float rpm);
-void mc_interface_set_pid_pos(float pos, float feedforward);
+void mc_interface_set_pid_pos(float pos, float feedforward, float pid_ratio);
 void mc_interface_set_pid_stream_pos(float pos, float feedforward);
 void mc_interface_set_current(float current);
 void mc_interface_set_brake_current(float current);
@@ -57,7 +57,7 @@ void mc_interface_set_openloop_phase(float current, float phase);
 void mc_interface_set_openloop_duty(float dutyCycle, float rpm);
 void mc_interface_set_openloop_duty_phase(float dutyCycle, float phase);
 int mc_interface_set_tachometer_value(int steps);
-void mc_interface_set_pid_stream_frequency (uint16_t frequency, uint16_t start_size);
+void mc_interface_set_pid_stream_frequency (uint16_t frequency, uint16_t start_size, float pid_ratio);
 void mc_interface_brake_now(void);
 void mc_interface_release_motor(void);
 void mc_interface_release_motor_override(void);
@@ -100,7 +100,7 @@ float mc_interface_get_battery_level(float *wh_left);
 float mc_interface_get_speed(void);
 float mc_interface_get_distance(void);
 float mc_interface_get_distance_abs(void);
-
+uint16_t mc_interface_stream_buffer_log(void);
 setup_values mc_interface_get_setup_values(void);
 volatile gnss_data *mc_interface_gnss(void);
 

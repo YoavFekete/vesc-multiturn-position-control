@@ -152,6 +152,7 @@ typedef struct {
 	foc_pwm_mode m_pwm_mode;
 	float m_pos_pid_set;
 	float m_feedforward_set;
+	float m_pid_ratio;
 	float m_speed_pid_set_rpm;
 	float m_speed_command_rpm;
 	float m_phase_now_observer;

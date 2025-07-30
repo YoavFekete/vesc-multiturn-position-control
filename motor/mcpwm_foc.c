@@ -779,10 +779,12 @@ void mcpwm_foc_set_pid_speed(float rpm) {
  * @param feedforwars
  * Externaly computed feedforward term
  */
-void mcpwm_foc_set_pid_pos(float pos,float feedforward) {
+void mcpwm_foc_set_pid_pos(float pos,float feedforward, float pid_ratio) {
 	get_motor_now()->m_control_mode = CONTROL_MODE_POS;
 	get_motor_now()->m_pos_pid_set = pos;
 	get_motor_now()->m_feedforward_set = feedforward;
+	get_motor_now()->m_pid_ratio = pid_ratio;
+
 
 	if (get_motor_now()->m_state != MC_STATE_RUNNING) {
 		get_motor_now()->m_motor_released = false;
@@ -1051,7 +1053,7 @@ void mcpwm_foc_get_pid_pos_high_res_control_data(control_log_t *data){
 
 void mcpwm_foc_get_pid_pos_partial_control_data(control_log_t *data) {
 	volatile motor_all_state_t *motor = get_motor_now();
-	data->curent_pid_pos = motor->m_pos_pid_set;
+	data->curent_pid_pos = motor->m_pos_pid_now;
 	data->iq_measured  = SIGN(motor->m_motor_state.vq * motor->m_motor_state.iq_filter) * motor->m_motor_state.i_abs_filter;
 }
 

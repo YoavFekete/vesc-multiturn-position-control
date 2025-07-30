@@ -99,5 +99,6 @@ void comm_can_send_status6(uint8_t id, bool replace);
 void comm_can_send_vel_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id);
 void comm_can_send_pos_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id, uint16_t dt_10us);
 void comm_can_send_cur_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id);
+void comm_can_send_dbg_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id, uint16_t stream_buffer_count);
 
 #endif /* COMM_CAN_H_ */

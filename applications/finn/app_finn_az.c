@@ -480,7 +480,7 @@ static THD_FUNCTION(control_thread, arg) {
 
 		if (UTILS_AGE_S(m_pod_state.last_update) < 2.0 && m_motors_enabled) {
 			timeout_reset();
-			mc_interface_set_pid_pos(angle_target / APP_FINN_WRAP_FACTOR, 0.0);
+			mc_interface_set_pid_pos(angle_target / APP_FINN_WRAP_FACTOR, 0.0,1.0);
 			m_pod_state.wait_data = false;
 		} else {
 //			m_pod_state.req_angle = angle_now - m_pod_state.angle_home - m_pod_state.angle_offset;

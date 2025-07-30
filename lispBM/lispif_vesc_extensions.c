@@ -1666,14 +1666,14 @@ static lbm_value ext_set_rpm(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_set_pos(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 	timeout_reset();
-	mc_interface_set_pid_pos(lbm_dec_as_float(args[0]),0.0);
+	mc_interface_set_pid_pos(lbm_dec_as_float(args[0]),0.0,1.0);
 	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_set_multiturn_pos_feedforward(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(2);
+	LBM_CHECK_ARGN_NUMBER(3);
 	timeout_reset();
-	mc_interface_set_pid_pos(lbm_dec_as_float(args[0]),lbm_dec_as_float(args[1]));
+	mc_interface_set_pid_pos(lbm_dec_as_float(args[0]),lbm_dec_as_float(args[1]), lbm_dec_as_float(args[2]));
 	return ENC_SYM_TRUE;
 }
 

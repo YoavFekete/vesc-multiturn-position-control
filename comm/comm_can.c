@@ -1281,6 +1281,14 @@ void comm_can_send_cnt_status(uint8_t id, bool replace, control_log_t *data, uin
 			buffer, send_index, replace, 0);
 }
 
+void comm_can_send_dbg_status(uint8_t id, bool replace, control_log_t *data, uint16_t sample_id, uint16_t stream_buffer_count) {
+	int32_t send_index = 0;
+	uint8_t buffer[2];
+	buffer_append_uint16(buffer, stream_buffer_count, &send_index);                         
+	comm_can_transmit_eid_replace(id | ((uint32_t)CAN_PACKET_STATUS_DBG << 8)| (sample_id << 16),
+			buffer, send_index, replace, 0);
+}
+
 
 #if CAN_ENABLE
 static THD_FUNCTION(cancom_read_thread, arg) {
@@ -1539,6 +1547,7 @@ static THD_FUNCTION(cancom_status_thread, arg) {
 				comm_can_send_vel_status(conf->controller_id, false, control_log_p,  sample_id);
 				comm_can_send_pos_status(conf->controller_id, false, control_log_p,  sample_id, (uint16_t)(dt / 140));
 				comm_can_send_cnt_status(conf->controller_id, false, control_log_p,  sample_id);
+				comm_can_send_dbg_status(conf->controller_id, false, control_log_p,  sample_id, mc_interface_stream_buffer_log());
 			}
 			else {
 				mc_interface_get_pid_pos_partial_control_data(control_log_p);
@@ -1647,13 +1656,13 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 		case CAN_PACKET_SET_POS:
 			ind = 0;
-			mc_interface_set_pid_pos(buffer_get_float32(data8, 1e6, &ind),0.0);
+			mc_interface_set_pid_pos(buffer_get_float32(data8, 1e6, &ind),0.0,1.0);
 			timeout_reset();
 			break;
 
 		case CAN_PACKET_SET_POS_STREAM_PARAMS: 
 			ind = 0;
-			mc_interface_set_pid_stream_frequency (buffer_get_uint16(data8, &ind), buffer_get_uint16(data8,&ind));
+			mc_interface_set_pid_stream_frequency (buffer_get_uint16(data8, &ind), buffer_get_uint16(data8,&ind),buffer_get_float32(data8,1000, &ind));
 			timeout_reset();
 		 	break;
 		

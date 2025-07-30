@@ -520,8 +520,46 @@ void foc_run_pid_control_pos(bool index_found, float dt, motor_all_state_t *moto
 	motor->m_pos_prev_proc = angle_now;
 
 	// Calculate output
-	float output = p_term + motor->m_pos_i_term + d_term + d_term_proc + motor->m_feedforward_set;
-	utils_truncate_number(&output, -1.0, 1.0);
+
+
+	// float pid = p_term + motor->m_pos_i_term + d_term + d_term_proc;
+	// float ff = motor->m_feedforward_set;
+
+	// // Dynamic PID limit based on feedforward
+	// float min_pid = 0.01f;
+	// float pid_limit = fmaxf(fabsf(ff * pid_ratio), min_pid);
+
+	// // Clamp PID term to ±pid_limit
+	// pid = fmaxf(fminf(pid, pid_limit), -pid_limit);
+
+	// // Combine
+	// float output = pid + ff;
+
+	// // Truncate total output to motor limits (e.g., duty [-1, 1])
+	// utils_truncate_number(&output, -1.0f, 1.0f);
+
+
+	
+	float pid = p_term + motor->m_pos_i_term + d_term + d_term_proc;
+	float ff = motor->m_feedforward_set;
+ 	float pid_ratio = motor->m_pid_ratio;
+	if (pid_ratio<0)
+	{
+		float pid_limit = fabsf(-pid_ratio * ff );
+		pid = fmaxf(fminf(pid, pid_limit), -pid_limit);
+	}
+	else {
+		pid = pid_ratio*pid;
+	}
+	
+
+	float output = pid + ff;
+	utils_truncate_number(&output, -1.0f, 1.0f);
+
+
+	// pid_ratio
+	// float output = p_term + motor->m_pos_i_term + d_term + d_term_proc + motor->m_feedforward_set;
+	// utils_truncate_number(&output, -1.0, 1.0);
 
 	if (conf_now->m_sensor_port_mode != SENSOR_PORT_MODE_HALL) {
 		if (index_found) {

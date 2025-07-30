@@ -129,6 +129,7 @@ static volatile uint16_t head = 0, tail = 0;
 static volatile bool        started_pos_stream   = false;
 static volatile float       pos_stream_frequency = 0;  // in HZ
 static volatile uint16_t	buffer_start_size    = TRAJ_BUF_SIZE+1;
+static volatile float 		pid_effect_ratio = 1;
 
 static volatile int m_sample_len;
 static volatile int m_sample_int;
@@ -632,13 +633,21 @@ void mc_interface_set_pid_speed(float rpm) {
 	events_add("set_pid_speed", rpm);
 }
 
-void mc_interface_set_pid_stream_frequency (uint16_t frequency, uint16_t start_size) 
+void mc_interface_set_pid_stream_frequency (uint16_t frequency, uint16_t start_size, float pid_ratio) 
 {
 	if (start_size>MAX_STREAM_START_SIZE) start_size = MAX_STREAM_START_SIZE ; // max start size is 32 to make sure we never ge the buffer to full 
 	if (frequency>MAX_STREAM_FREQUENCY) frequency = MAX_STREAM_FREQUENCY ;
+	if (pid_ratio<0) pid_ratio = 0 ;
+	else if (pid_ratio>1) pid_ratio = 1 ;
 	pos_stream_frequency = (float)frequency;  
 	buffer_start_size = start_size;
+	pid_effect_ratio = pid_ratio;
 } 
+
+
+uint16_t mc_interface_stream_buffer_log() {
+	return (head - tail) & (TRAJ_BUF_MASK - 1);
+}
 
 void mc_interface_set_pid_stream_pos(float pos, float feedforward) 
 {
@@ -673,7 +682,7 @@ void mc_interface_set_pid_stream_pos(float pos, float feedforward)
 	
 }
 
-void mc_interface_set_pid_pos(float pos, float feedforward) {
+void mc_interface_set_pid_pos(float pos, float feedforward, float pid_ratio) {
 	SHUTDOWN_RESET();
 
 	if (mc_interface_try_input(false)) {
@@ -700,7 +709,7 @@ void mc_interface_set_pid_pos(float pos, float feedforward) {
 		break;
 
 	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_pid_pos(pos, feedforward);
+		mcpwm_foc_set_pid_pos(pos, feedforward,pid_ratio);
 		break;
 
 	default:
@@ -2760,7 +2769,7 @@ static THD_FUNCTION(stream_trajectory_thread, arg){
 		// if we didnt start to pop and the number of traj is what is requierd then set inner falg to start pop
 		if (!buffer_pop_started) 
 		{	
-			if (((head - tail) & TRAJ_BUF_MASK)>=buffer_start_size) 
+			if (((head - tail) & (TRAJ_BUF_MASK-1))>=buffer_start_size) 
 			{
 				buffer_pop_started = true;
 				period_ticks = MS2ST((int)(1000.0f / pos_stream_frequency));
@@ -2778,7 +2787,7 @@ static THD_FUNCTION(stream_trajectory_thread, arg){
 				pos = pos_buf[tail];
 				ff = ff_buf[tail];
 				tail = (tail + 1) & (TRAJ_BUF_SIZE - 1);
-				mc_interface_set_pid_pos(pos,ff);
+				mc_interface_set_pid_pos(pos,ff, pid_effect_ratio);
 			}
 			next += period_ticks;
     		chThdSleepUntil(next);
